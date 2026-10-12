@@ -39,8 +39,12 @@
 
 ## What This Does
 
-<!-- Three or four sentences: what a user asks for, and what they get back. -->
-
+A user types a plain-language request such as "vintage graphic tee under $30, size M"
+and, optionally, supplies the clothes they already own. FitFindr searches 40 thrift
+listings, picks the best match, suggests one or two outfits that combine it with the
+user's wardrobe (or general styling advice if the wardrobe is empty), and writes a
+short social-media style fit card about the find. If nothing matches, it stops early
+and says what to change (price, size or keywords) instead of calling the model.
 
 
 ---
@@ -59,24 +63,24 @@
 
 ### `search_listings`
 
-- **What it does:**
-- **Inputs:** <!-- name and type each: `max_price` (float), not "a price" -->
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Filters the 40 listings by price ceiling and size, scores the rest by keyword overlap with the description, and returns the best matches.
+- **Inputs:** `description` (str), `size` (str or None), `max_price` (float or None, inclusive).
+- **Returns:** A list of at most `config.SEARCH_RESULT_LIMIT` (10) listing dicts, best match first. Each dict has `id`, `title`, `description`, `category`, `style_tags` (list), `size`, `condition`, `price` (float), `colors` (list), `brand` (str or None), `platform`. Size is a whole-word match (`M` matches `S/M` and `M/L`, never `XL` or `US 9`; `One Size` matches anything).
+- **When it has nothing:** An empty list `[]` (never None, never an exception).
 
 ### `suggest_outfit`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Asks the model for one or two outfits built around the chosen item and the user's wardrobe.
+- **Inputs:** `new_item` (dict, a listing), `wardrobe` (dict with an `items` list of dicts having `name`, `category`, `colors`, `style_tags`, `notes`).
+- **Returns:** A non-empty str of outfit suggestions that name owned pieces.
+- **When it has nothing:** If `wardrobe["items"]` is empty it returns general styling advice (still a non-empty str). If the model returns blank text it returns a fixed fallback sentence.
 
 ### `create_fit_card`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Asks the model for a casual 2-4 sentence caption about the find that mentions the item, its price and its platform.
+- **Inputs:** `outfit` (str, from `suggest_outfit`), `new_item` (dict, a listing).
+- **Returns:** A str caption of 2-4 sentences.
+- **When it has nothing:** If `outfit` is empty or whitespace it returns the str "No outfit suggestion was provided, so there is nothing to write a fit card about." without calling the model.
 
 ---
 
@@ -93,13 +97,13 @@
      The grader checks your code against what you claim here, so the file and
      function have to be real. -->
 
-**Branch rule:**
+**Branch rule:** If `search_listings` returns an empty list, put a message in `session["error"]` that names what to change (raise the price limit, drop or change the size, use simpler keywords) and return the session without calling `suggest_outfit` or `create_fit_card`. Otherwise store the first result in `session["selected_item"]` and go on to `suggest_outfit`.
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** Regex (`agent.py::parse_query`), no model call. It pulls a price ceiling from "under/below/max/up to $N" or a bare "$N", a size from "size X", and treats the rest as the description.
 
-**What moves through the session:** <!-- which fields, in what order -->
+**What moves through the session:** `query` -> `parsed` -> `search_results` -> `selected_item` -> `outfit_suggestion` -> `fit_card`. Each tool's result is written into the session and the next tool reads its input back out of it. `error` is set only when the run stops early.
 
 ---
 
@@ -112,26 +116,35 @@
 
 **One full query**
 
-```
-$ python app.py ask '...'
+The empty-search path (no key needed):
 
 ```
+$ python app.py ask 'designer ballgown size XXS under $5'
+
+  Nothing matched 'designer ballgown'. Try to raise the price limit above $5, drop or change the size (XXS), or use simpler keywords such as 'tee', 'jeans' or 'jacket'.
+
+0 model calls this session
+```
+
+The happy path (`python app.py ask 'vintage graphic tee under $30'`) calls the model and
+has NOT been run yet: `.env` still holds the placeholder `GEMINI_API_KEY`.
+TODO: paste its real output here once the key is added.
 
 **The three tools, tested one at a time**
 
 ```
-$ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
-
+$ python -c "from tools import search_listings; r=search_listings('graphic tee', max_price=30); print([(x['id'],x['title'],x['price']) for x in r])"
+[('lst_006', 'Graphic Tee — 2003 Tour Bootleg Style', 24.0), ('lst_002', 'Y2K Baby Tee — Butterfly Print', 18.0), ('lst_033', 'Vintage Band Tee — Faded Grey', 19.0), ('lst_015', 'Vintage Graphic Hoodie — Faded Black', 26.0), ('lst_017', 'Mesh Long-Sleeve Top — Black', 15.0), ('lst_012', 'Oversized Crewneck Sweatshirt — Vintage Navy', 20.0), ('lst_011', 'Low-Rise Cargo Pants — Khaki', 27.0)]
 ```
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
-
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
+TODO: not run yet (needs the API key).
 ```
 
 ```
-$ python -c "from tools import create_fit_card; ..."
-
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
+TODO: not run yet (needs the API key).
 ```
 
 ---
@@ -147,15 +160,15 @@ $ python -c "from tools import create_fit_card; ..."
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* Claude to set up the project: create the venv and install `requirements.txt`.
+- *What came back:* It created the venv with the system `python3`, which is 3.14.2. The install worked, but `requirements.txt` says 3.14 is unsupported.
+- *What I changed:* I deleted the venv and rebuilt it with Python 3.13 (`/opt/homebrew/bin/python3.13`), then reinstalled.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* Claude to build `search_listings` following the starter's TODO (keyword overlap, filter on size and price).
+- *What came back:* A plain keyword scorer. The data has sizes like `S/M`, `W30 L30`, `US 9` and `XL (oversized)`, so a substring size test would match `"s"` inside `"us 9"`.
+- *What I changed:* I replaced the substring test with a whole-word comparison (`_size_matches`), made `One Size` listings match any size, and made criterion 5 check this directly.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
