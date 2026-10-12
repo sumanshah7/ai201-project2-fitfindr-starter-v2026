@@ -126,9 +126,23 @@ $ python app.py ask 'designer ballgown size XXS under $5'
 0 model calls this session
 ```
 
-The happy path (`python app.py ask 'vintage graphic tee under $30'`) calls the model and
-has NOT been run yet: `.env` still holds the placeholder `GEMINI_API_KEY`.
-TODO: paste its real output here once the key is added.
+The happy path:
+
+```
+$ python app.py ask 'vintage graphic tee under $30'
+
+  Found:    Graphic Tee — 2003 Tour Bootleg Style — $24.0 on depop
+
+  Outfit:   Outfit 1: Pair the graphic tee with baggy straight-leg jeans, black combat boots, and the black crossbody bag. Layer the vintage black denim jacket on top and finish with the brown leather belt.
+
+Outfit 2: Tuck the graphic tee into the wide-leg khaki trousers, add the black combat boots and brown leather belt, and layer the black cropped zip hoodie open over top.
+
+  Fit card: Still shaking that I manifested this 2003 tour bootleg tee on depop for only $24. The fade on it is literally insane and gives off the exact beat-up rockstar vibe I’ve been hunting for. Going to throw it on with baggy straight-leg jeans and combat boots today, but honestly it's gonna look so good tucked into wide-leg khakis later this week too.
+
+2 model calls this session, 431 prompt + 165 output tokens
+```
+
+State check on the same query: `session["selected_item"]["id"]` = `lst_006`, `session["search_results"][0]["id"]` = `lst_006`, `session["error"]` = `None`.
 
 **The three tools, tested one at a time**
 
@@ -139,12 +153,30 @@ $ python -c "from tools import search_listings; r=search_listings('graphic tee',
 
 ```
 $ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
-TODO: not run yet (needs the API key).
+Outfit 1: Pair the Vintage Levi's 501 Jeans with the White ribbed tank top, the Vintage black denim jacket, and the Chunky white sneakers. Add the Brown leather belt to finish the look.
+
+Outfit 2: Wear the Vintage Levi's 501 Jeans under the Oversized grey crewneck sweatshirt, paired with the Black combat boots and the Brown leather belt. Throw on the Black crossbody bag to complete your outfit.
+```
+
+Empty wardrobe (`get_empty_wardrobe()`) returns general advice instead of failing:
+
+```
+Tuck a cropped white graphic tee into the jeans, layer an oversized black leather jacket over top, and finish the look with classic black Converse or chunky platform loafers.
+
+Alternatively, pair them with an oversized neutral beige crewneck sweater, a worn-in brown leather belt, and retro white running sneakers like New Balance.
 ```
 
 ```
 $ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
-TODO: not run yet (needs the API key).
+Still not over finding these vintage Levi's 501 jeans in the absolute best medium wash on depop. For only $38, they have that perfectly worn-in slouch that usually takes years to break in. Can’t wait to live in these with just a simple pair of white sneakers all season.
+```
+
+Three runs on the same item with `AI201_CACHE=0` came out different each time:
+
+```
+- Still riding the high from finding these vintage Levi's 501 jeans on depop for just $38. The medium wash has that exact 90s slouch I've been hunting for. Can't wait to live in these with my favorite white sneakers all spring.
+- Found these vintage Levi's 501 jeans on depop for only $38 and I am literally never taking them off. They have the absolute best medium wash and worn-in feel. Just need to style them with my favorite white sneakers and I'm good to go.
+- Still recovering from the fact that I found these vintage Levi's 501 jeans on depop for just $38. The medium wash is *so* broken-in and has that exact 90s slouch I've been hunting for. Honestly just gonna live in these with my favorite white sneakers from now on.
 ```
 
 ---
