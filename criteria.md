@@ -25,9 +25,10 @@ Given a query that matches at least one listing, the agent completes all three
 tool calls and returns a fit card — in at least 4 of 5 tries.
 
 **Why this target:**
-<!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
-     "my search is a plain keyword match and some phrasings will miss" is a
-     real answer. -->
+I picked 4 of 5 because my search is a plain keyword match over 40 listings, so a
+phrasing like "something cute for summer" shares no words with any listing and
+will miss, and the two model calls can also fail (rate limit, empty reply). 5 of 5
+would punish me for vocabulary the data doesn't have, not for a broken agent.
 
 ---
 
@@ -37,66 +38,55 @@ Given a query that matches no listings, the agent stops before calling
 `suggest_outfit` and returns a message naming what to change — 5 of 5 tries.
 
 **Why this target:**
-<!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
-     about this path? -->
+5 of 5 because this path calls no model at all: it is a regex parse, a list
+filter and an `if not results` check, all deterministic. If it fails once, that is
+a bug in the branch, not variation.
 
 ---
 
 ## 3. Something about state
 
-<!-- YOU WRITE THIS ONE.
-
-     How would you know that the item your search found is the same item the
-     next tool received? Name something countable or observable.
-
-     This is the criterion people find hardest, because state failure doesn't
-     look like state failure — it looks like a tool problem. Something that
-     compares session["selected_item"] against what actually reached
-     suggest_outfit is the shape you're after. -->
-
-
+On 5 queries that match at least one listing, in 5 of 5 tries
+`session["selected_item"]["id"]` equals `session["search_results"][0]["id"]`, and
+the `id` of the item passed into `suggest_outfit` and into `create_fit_card` (checked
+by wrapping each function to record its argument) is that same id.
 
 **Why this target:**
-
-
+5 of 5, with no allowance for misses. Nothing random happens between the search
+and the hand-off, so a single mismatch means the loop passed the wrong value or
+overwrote it, and that should never be tolerated. I compare ids, not titles,
+because two listings can share a title.
 
 ---
 
 ## 4. Something about the fit card
 
-<!-- YOU WRITE THIS ONE.
-
-     The fit card calls a model, so the same input can produce different words
-     each time. That's not a bug — it's the nature of the tool. So what would
-     make it acceptable?
-
-     Think about what you'd actually be unhappy to see. A caption that never
-     mentions the price? Two different items producing the same opening
-     sentence? A card longer than a caption anyone would post? Any of those can
-     be turned into a number. -->
-
-
+Across fit cards for 5 different items (one try each), at least 4 of 5 cards
+meet all of: 2 to 4 sentences; contains the item's price as "$N"; contains the
+item's platform name; and none of the 5 cards starts with the same first five
+words as another.
 
 **Why this target:**
-
-
+4 of 5 because the model is non-deterministic and may drop the price or write
+five sentences once in a while, so I allow one slip. I did not set 3 of 5 because
+the price and platform are given to the model in the prompt, so omitting them
+more than once in five is a prompt problem I should catch. The first-five-words
+rule is there to catch a template-style caption that ignores the item.
 
 ---
 
 ## 5. Your choice
 
-<!-- YOU WRITE THIS ONE TOO.
-
-     Pick something you actually care about getting right. Speed, the empty
-     wardrobe path, what happens when the model can't be reached, whether the
-     search respects a price ceiling — anything, as long as it names a number
-     or an observable outcome. -->
-
-
+The price ceiling and size are always respected: over 10 different queries that
+include a ceiling and/or a size, 10 of 10 returned listings have
+`price <= max_price` and a size that matches the requested size as a whole token
+(so "M" never returns "XL" or "US 9").
 
 **Why this target:**
-
-
+10 of 10 because it is a plain filter, and a thrift shopper who says "under $30"
+and gets a $45 jacket will stop trusting the search. I chose it because the
+starter warns that substring size matching quietly returns the wrong items, and
+this is the check that would catch it.
 
 ---
 
