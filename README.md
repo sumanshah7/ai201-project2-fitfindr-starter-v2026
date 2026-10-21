@@ -202,6 +202,18 @@ Three runs on the same item with `AI201_CACHE=0` came out different each time:
 - *What came back:* A plain keyword scorer. The data has sizes like `S/M`, `W30 L30`, `US 9` and `XL (oversized)`, so a substring size test would match `"s"` inside `"us 9"`.
 - *What I changed:* I replaced the substring test with a whole-word comparison (`_size_matches`), made `One Size` listings match any size, and made criterion 5 check this directly.
 
+**Moment 3 (unit 4)**
+
+- *What I asked for:* Claude to write a scorer (`score_eval.py`) that turns the wording of my five criteria into PASS/FAIL checks.
+- *What came back:* A scorer whose criterion 5 check first reused `tools._size_matches` to judge the search results, so the tool would have been grading itself.
+- *What I changed:* I rewrote that check inside the scorer so it doesn't import anything from `tools.py`.
+
+**Moment 4 (unit 4)**
+
+- *What I asked for:* Claude to diagnose the criterion 2 miss and propose one change.
+- *What came back:* A diagnosis pointing at `search_listings` (any single keyword hit counts) rather than at the loop's branch, and a fix requiring at least half the keywords to match. It predicted the fix would break the vague "summer picnic" query before I ran it.
+- *What I changed:* I kept the fix and ran the full test again anyway. The prediction held: criterion 2 went to 5/5 and criterion 1 dropped to 4/5. I reported the trade instead of loosening the target or revising the criterion.
+
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
@@ -209,136 +221,255 @@ Three runs on the same item with `AI201_CACHE=0` came out different each time:
 
 ---
 
-## Run Log — Before
+## Run Log: Before
 
-<!-- Five criteria, five tries each, in this exact format.
-
-     Five, because your criteria are written out of five. Mark each try PASS
-     or FAIL, count the passes, and read that count against your target — a
-     row targeting 4 of 5 with three PASS cells is MISSED (3/5).
-
-     `python run_eval.py --label before` runs everything and writes the table
-     into results/. Paste it here and fill in the verdicts. -->
+How the tries were run: `python score_eval.py --label before` (full output in `results/run_2026-10-21_0850_before.md`). It reuses `run_eval.run_once` with the cache off and temperature 0.9, but I wrote it instead of using `run_eval.py` directly because `run_eval.py` repeats every scenario five times and leaves the verdicts blank. Here the PASS/FAIL rules are coded straight from the wording of `criteria.md`. For criteria 1 to 4, one try is one run of one query, and five queries make five tries, as the criteria are worded ("5 queries", "5 different items"). Criterion 5 names 10 queries and checks only search output, so it goes through the MCP search tool with no model call, two queries per try column (both must pass), 10 of 10 overall.
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. Matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. Impossible query stops before suggest_outfit | 5 of 5 | PASS | PASS | FAIL | PASS | PASS | MISSED (4/5) |
+| 3. Selected item is the item that reached the tools | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card: 2-4 sentences, price, platform, distinct opening | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. Price ceiling and size respected | 10 of 10 | PASS | PASS | PASS | PASS | PASS | MET (10/10) |
 
-**Real output from one try**, pasted as text, naming the file and function
-that produced it:
+**Real output from one try**: the criterion 2 miss (Try 3), produced by `agent.py::run_agent` calling `tools.py::search_listings` through MCP:
 
 ```
+Try 3: FAIL: `white leather wedding dress` did not stop cleanly (error=None, suggest_outfit calls=['lst_022'])
 
+90s Leather Bomber — Black ($75.0, depop)
+Still can't believe I found this holy grail 90s Leather Bomber — Black scrolling on depop for $75. It literally makes any basic outfit look instantly cool, whether I'm throwing it over a white ribbed tank and baggy jeans or a cropped hoodie with khakis. Absolute keeper.
+
+[2] search_listings (via MCP)
+      in:  {'description': 'white leather wedding dress', 'size': None, 'max_price': None}
+      out: 10 items: 90s Leather Bomber — Black, Leather Belt — Brown, Braided, Low-Top Canvas Sneakers — Off-White … +7 more
+[3] select
+      out: 90s Leather Bomber — Black ($75.0, depop)
+```
+
+And a passing try for criterion 3 (`agent.py::run_agent`, wrapped to record what each tool received):
+
+```
+Try 1: PASS: `vintage jeans size W30`: top=lst_001 selected=lst_001 suggest_outfit got=['lst_001'] create_fit_card got=['lst_001']
+```
+
+And a passing criterion 4 card (`tools.py::create_fit_card`):
+
+```
+Graphic Tee — 2003 Tour Bootleg Style ($24.0, depop)
+Still not over finding this 2003 tour bootleg graphic tee for just $24 on depop—the fade on it is honestly unmatched. Thinking about layering it over a white ribbed tank with wide-leg khakis and chunky sneakers, or keeping it grungy with baggy denim and combat boots.
 ```
 
 ---
 
 ## Verdicts and Diagnoses
 
-<!-- MET or MISSED per criterion against LAST UNIT's target, plus a sentence on
-     how you decided.
-
-     Then, for every miss: which of the four places it happened — a tool, the
-     loop's branch, the session, or the model's output — AND the mechanism.
-
-     Not a diagnosis:  "The fit card was bad."
-     A diagnosis:      "The fit card criterion missed on 2 of 5 items. Both had
-                        an empty brand field. My prompt puts the brand in the
-                        first sentence, so the card opened with a blank and read
-                        like a fragment. The tool worked; the prompt assumed a
-                        field that isn't always there."
-
-     Look for a pattern. Three misses on the same tool is one problem, not
-     three. -->
-
 | # | Criterion | Target | Verdict | How I decided |
 |---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| 1 | Matching query completes all three tools | 4 of 5 | MET (5/5) | All five queries returned a fit card with no error. But see the diagnosis below: one of the five passed on a weak match. |
+| 2 | Impossible query stops before suggest_outfit | 5 of 5 | MISSED (4/5) | Target was 5 of 5, and "white leather wedding dress" got through to suggest_outfit. |
+| 3 | Selected item is the item that reached the tools | 5 of 5 | MET (5/5) | In all five runs the top result, `selected_item`, and the ids that reached `suggest_outfit` and `create_fit_card` were the same. |
+| 4 | Fit card: 2-4 sentences, price, platform, distinct opening | 4 of 5 | MET (5/5) | All five cards passed every check, and no two opened with the same five words. |
+| 5 | Price ceiling and size respected | 10 of 10 | MET (10/10) | None of the 10 queries returned anything over its ceiling or in a non-matching size. |
 
 **Diagnoses**
 
+- **Criterion 2 miss: the tool, not the branch.** The branch itself is fine: it fired on 4 of 5 impossible queries and the one-line check `if not results` is correct. The miss happened one step earlier. `search_listings` scores each listing by summing keyword hits and keeps anything above zero, so a single shared word is enough. "white leather wedding dress" shares "leather" with the bomber jacket (and "white" with other items), so the tool returned 10 results for something the data does not have, and the loop correctly went on with them. Mechanism: OR-style keyword matching with a threshold of one hit.
+- **Criterion 1 passed for a bad reason in one try.** "something cute for a summer picnic" returned a crochet halter top because "cute" appears in its description. That is the same mechanism as the miss above, and it counted as a pass because my rule for criterion 1 only checks that a fit card came back, not that the item was a sensible match. So the 5/5 in the before table overstates how well search works.
+- **Criteria 3 and 5 are deterministic code**, so a 5/5 and 10/10 tells me little; they would only fail if the loop or filter were broken, which is what they exist to catch. **Criterion 4:** I got 5/5 against a target that allowed one miss, so I would call my target on the loose side; I would tighten it to 5 of 5 or add a check that the card mentions something specific to the item (a colour or era), because "price and platform" are handed to the model in the prompt.
+- Pattern: both real findings (criterion 2's miss, criterion 1's weak pass) trace to the same place, the `search_listings` scoring threshold, so they are one problem.
 
+I did not revise any criterion in `criteria.md`.
 
 ---
 
 ## Loop Trace
 
-<!-- One full run, printed step by step, with the MCP call visible in it.
-
-     `python app.py ask '...' --trace` once you've added the trace.step()
-     calls in Milestone 2.
-
-     Worth pasting BOTH the happy path and the empty-search path. The empty
-     one should be visibly shorter, because it stops. If your two traces are
-     the same length, your branch isn't working — and this is the fastest way
-     anyone will ever find that out. -->
+From `python app.py ask 'vintage graphic tee under $30' --trace` (the run in `results/run_2026-10-21_0850_before.md`, Criterion 1 Try 1). The search step shows `(via MCP)`.
 
 **Happy path**
 
 ```
-
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 items: Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey, Vintage Graphic Hoodie — Faded Black … +7 more
+[3] select
+      out: Graphic Tee — 2003 Tour Bootleg Style ($24.0, depop)
+      →    first result goes into session['selected_item']
+[4] suggest_outfit
+      in:  Graphic Tee — 2003 Tour Bootleg Style + wardrobe of 10 items
+      out: Wear the graphic tee with the baggy straight-leg jeans, black combat boots, and the brown leather belt. Layer …
+[5] create_fit_card
+      in:  Graphic Tee — 2003 Tour Bootleg Style + outfit text
+      out: found this insane 2003 tour bootleg graphic tee on depop for only $24 and my life is officially changed. hones…
 ```
 
-**Empty search**
+**Try 2: PASS** — `looking for a y2k top size S` — fit card returned
 
 ```
-
+Mesh Long-Sleeve Top — Black ($15.0, depop)
+found this black mesh long-sleeve top on depop for just $15 and honestly it’s already doing way too much heavy lifting in my closet. Layering it under an oversized grey crewneck with wide-leg khakis is the lazy-day uniform now.
+```
+Trace:
+```
+[1] parse_query
+      in:  looking for a y2k top size S
+      out: {'description': 'looking for a y2k top', 'size': 'S', 'max_price': None}
+[2] search_listings (via MCP)
+      in:  {'description': 'looking for a y2k top', 'size': 'S', 'max_price': None}
+      out: 6 items: Mesh Long-Sleeve Top — Black, Y2K Baby Tee — Butterfly Print, Crochet Halter Top — Cream … +3 more
+[3] select
+      out: Mesh Long-Sleeve Top — Black ($15.0, depop)
+      →    first result goes into session['selected_item']
+[4] suggest_outfit
+      in:  Mesh Long-Sleeve Top — Black + wardrobe of 10 items
+      out: Layer the mesh top over the white ribbed tank top, pair them with the baggy straight-leg jeans, and finish wit…
+[5] create_fit_card
+      in:  Mesh Long-Sleeve Top — Black + outfit text
+      out: found this black mesh long-sleeve top on depop for just $15 and honestly it’s already doing way too much heavy…
 ```
 
-**On the MCP move:** <!-- what changed in your code, and whether anything
-behaved differently afterwards. If the rewire didn't work, say exactly where it
-broke — the error text and the last thing that worked. That earns the point in
-full. -->
+**Try 3: PASS** — `oversized flannel under $40` — fit card returned
 
+```
+Oversized Flannel Shirt — Plaid Red/Black ($22.0, thredUp)
+Still not over finding this absolute unit of a red and black flannel on thredUp for just $22. Honestly obsessed with throwing it unbuttoned over a ribbed tank or layering a cropped hoodie underneath depending on the vibe. 90s grunge mode: officially activated.
+```
+Trace:
+```
+[1] parse_query
+      in:  oversized flannel under $40
+      out: {'description': 'oversized flannel', 'size': None, 'max_price': 40.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'oversized flannel', 'size': None, 'max_price': 40.0}
+      out: 5 items: Oversized Flannel Shirt — Plaid Red/Black, Oversized Crewneck Sweatshirt — Vintage Navy, Oversized College Crewneck — Faded Red … +2 more
+[3] select
+      out: Oversized Flannel Shirt — Plaid Red/Black ($22.0, thredUp)
+      →    first result goes into session['selected_item']
+[4] suggest_outfit
+      in:  Oversized Flannel Shirt — Plaid Red/Black + wardrobe of 10 items
+      out: Wear the oversized flannel shirt unbuttoned over the white ribbed tank top, paired with the baggy straight-leg…
+[5] create_fit_card
+      in:  Oversized Flannel Shirt — Plaid Red/Black + outfit text
+      out: Still not over finding this absolute unit of a red and black flannel on thredUp for just $22. Honestly obsesse…
+```
 
+**Try 4: PASS** — `chunky sneakers size US 9` — fit card returned
+
+```
+Low-Top Canvas Sneakers — Off-White ($20.0, poshmark)
+scored these off-white canvas sneakers on poshmark for just $20 and my brain is already running through outfits. honestly debating between wearing them with baggy straight-leg jeans and a grey crewneck today, or switching it up with wide-leg khaki trousers and a vintage black denim jacket tomorrow.
+```
+Trace:
+```
+[1] parse_query
+      in:  chunky sneakers size US 9
+      out: {'description': 'chunky sneakers', 'size': 'US 9', 'max_price': None}
+[2] search_listings (via MCP)
+      in:  {'description': 'chunky sneakers', 'size': 'US 9', 'max_price': None}
+      out: 2 items: Low-Top Canvas Sneakers — Off-White, Knit Cardigan — Chunky Brown
+[3] select
+      out: Low-Top Canvas Sneakers — Off-White ($20.0, poshmark)
+      →    first result goes into session['selected_item']
+[4] suggest_outfit
+      in:  Low-Top Canvas Sneakers — Off-White + wardrobe of 10 items
+      out: Outfit 1: Pair the off-white canvas sneakers with the baggy straight-leg jeans, dark wash and the white ribbed…
+[5] create_fit_card
+      in:  Low-Top Canvas Sneakers — Off-White + outfit text
+      out: scored these off-white canvas sneakers on poshmark for just $20 and my brain is already running through outfit…
+```
+
+**Try 5: PASS** — `something cute for a summer picnic` — fit card returned
+
+```
+Crochet Halter Top — Cream ($22.0, depop)
+Still can’t believe I scored this cream crochet halter top for only $22 on depop! Gonna layer it over a white ribbed tank with wide-leg khaki trousers and chunky boots for that 90s indie sleaze look.
+```
+Trace:
+```
+[1] parse_query
+      in:  something cute for a summer picnic
+      out: {'description': 'something cute for a summer picnic', 'size': None, 'max_price': None}
+[2] search_listings (via MCP)
+      in:  {'description': 'something cute for a summer picnic', 'size': None, 'max_price': None}
+      out: 4 items: Crochet Halter Top — Cream, High-Waisted Denim Shorts — Cutoff, Wide-Leg Linen Trousers — Natural … +1 more
+[3] select
+      out: Crochet Halter Top — Cream ($22.0, depop)
+      →    first result goes into session['selected_item']
+[4] suggest_outfit
+      in:  Crochet Halter Top — Cream + wardrobe of 10 items
+      out: Pair the cream crochet halter top with the baggy straight-leg jeans, vintage black denim jacket, and chunky wh…
+[5] create_fit_card
+      in:  Crochet Halter Top — Cream + outfit text
+      out: Still can’t believe I scored this cream crochet halter top for only $22 on depop! Gonna layer it over a white …
+```
+
+**Empty search** (from `python app.py ask 'neon green tuxedo size XXS under $3' --trace`). It is shorter because it stops after step 3:
+
+```
+[1] parse_query
+      in:  neon green tuxedo size XXS under $3
+      out: {'description': 'neon green tuxedo', 'size': 'XXS', 'max_price': 3.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'neon green tuxedo', 'size': 'XXS', 'max_price': 3.0}
+      out: [] (empty)
+[3] branch
+      →    search returned [] — stopping before suggest_outfit
+
+  Nothing matched 'neon green tuxedo'. Try to raise the price limit above $3, drop or change the size (XXS), or use simpler keywords such as 'tee', 'jeans' or 'jacket'.
+```
+
+**The three failure modes, triggered on purpose**
+
+1. Empty search: the message above. It names three things to change.
+2. Empty wardrobe (`python app.py ask 'oversized flannel shirt under $40' --empty-wardrobe`): `suggest_outfit` got "wardrobe of 0 items" and returned general advice ("Pair the oversized red and black flannel with vintage light-wash high-waisted denim jeans and a tucked-in black ribbed tank top..."), then the fit card was written normally. No crash and no empty string.
+3. Model unavailable: I set a wrong key through the environment (`GEMINI_API_KEY=badkey123 python app.py ask 'cropped cardigan under $60' --trace`) so `.env` was never touched. Search worked, step 4 stopped, and the user saw:
+
+```
+[4] model unavailable
+      →    The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at ai…
+
+  The outfit helper couldn't reach the AI model, so no outfit or fit card was made. Your search itself worked. Check your API key in .env and your internet connection, then run the same query again. Details: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+```
+
+The handlers are in `agent.py::run_agent` (`except ModelUnavailable` and `except MCPError`). Before that handler existed the loop would have let the exception escape as a stack trace.
+
+**On the MCP move:** I moved `search_listings`. In `mcp_server.py` I registered it with a description that names units and types and states the empty case, and in `agent.py::run_agent` I replaced the direct call with `mcp_client.call_tool("search_listings", {...})`. Nothing behaved differently: I compared direct and MCP results for three queries (7 results, 1 result, and an empty result) and the returned lists were equal, including the empty case coming back as `[]` rather than `None`. The only visible difference is that each call starts a separate server process, so a search is noticeably slower.
 
 ---
 
 ## The Improvement
 
-<!-- What you changed, why your diagnosis pointed at it, and the after-run in
-     the same table format. One change, measured properly.
+**What I changed:** In `tools.py::search_listings`, a listing now has to match at least half of the query's keywords (rounded up) instead of any one of them. One edit, in the line that decides whether a listing is kept.
 
-     `python run_eval.py --label after` -->
+**Which failure it was meant to fix:** The criterion 2 miss ("white leather wedding dress" matching a leather jacket on one shared word). I picked this change because the diagnosis put both findings in that one threshold.
 
-**What I changed:**
+### Run Log: After
 
-**Which failure it was meant to fix:**
-
-### Run Log — After
+`python score_eval.py --label after` (`results/run_2026-10-21_0852_after.md`). Same scenarios, same scorer.
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. Matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | FAIL | MET (4/5) |
+| 2. Impossible query stops before suggest_outfit | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Selected item is the item that reached the tools | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card: 2-4 sentences, price, platform, distinct opening | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. Price ceiling and size respected | 10 of 10 | PASS | PASS | PASS | PASS | PASS | MET (10/10) |
 
-**Did it help, and how do I know:**
-
-<!-- If it made things worse, say that. Honestly reported, that earns full
-     credit and is more interesting than one that worked. -->
-
-
+**Did it help, and how do I know:** It fixed what it targeted and cost something else. Criterion 2 went from 4/5 to 5/5: "white leather wedding dress" now returns `[]` and the loop stops before `suggest_outfit`. The price is criterion 1's Try 5: "something cute for a summer picnic" now returns nothing (only one of its keywords, "cute", appears in the data) and the run stops with "Nothing matched". Criterion 1 went from 5/5 to 4/5, which still meets its target but exactly at the edge. I think that trade is the right one, because the earlier "pass" on that query was a bad match (a halter top for a picnic), but the user-visible cost is that vague, natural-language requests now return nothing.
 
 ---
 
 ## What's Still Broken
 
-<!-- For each criterion still missed: what you'd do, and why you stopped where
-     you did. "I ran out of time" is fine if it's true. Pretending nothing is
-     left is not. -->
-
-
+- **Natural-language queries.** "something cute for a summer picnic" now stops with a message, where a person would expect some suggestions. The search is plain keyword matching with no sense of "summer" or "picnic". What I would do: let the model rewrite the user's request into the data's vocabulary (tee, shorts, linen) before searching, or retry once with half the keywords. I stopped because the brief limits this unit to the MCP move and one improvement.
+- **Criterion 4 target is too loose.** It was met at 5/5 against a target allowing one miss, and the card checks (price, platform, sentence count) are all things the prompt hands the model directly. I would tighten it to 5 of 5 and add a check for a detail specific to the item.
+- **The loop is slow over MCP.** Each search starts a fresh server process. Holding the connection open would fix it. I stopped because it makes the failure behaviour harder to reason about.
+- **Partial-match tail.** Searches that pass the half-keyword rule can still return weak items at the end of the list (a sweatshirt for "graphic tee"). Nothing in my criteria checks the tail, so I left it.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 

@@ -122,7 +122,10 @@ def search_listings(
         ])))
         # A hit in the title or style tags is worth more than one in the prose.
         score = sum(3 * (k in title) + 2 * (k in tags) + (k in other) for k in keywords)
-        if score > 0:
+        hits = sum(k in title or k in tags or k in other for k in keywords)
+        # At least half the keywords must appear, so one stray word ("leather" in
+        # "white leather wedding dress") can't make an unrelated item a match.
+        if score > 0 and hits >= (len(keywords) + 1) // 2:
             scored.append((score, listing))
 
     scored.sort(key=lambda pair: (-pair[0], pair[1]["price"]))
