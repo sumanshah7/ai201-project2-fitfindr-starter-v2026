@@ -17,8 +17,9 @@ import re
 
 import config
 import trace
-from tools import search_listings, suggest_outfit, create_fit_card
+from tools import suggest_outfit, create_fit_card
 from generate import ModelUnavailable
+from mcp_client import call_tool, MCPError
 
 
 # ── session state ─────────────────────────────────────────────────────────────
@@ -110,35 +111,67 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     session = new_session(query, wardrobe)
     session["parsed"] = parse_query(query)
     parsed = session["parsed"]
+    trace.step("parse_query", inputs=query, returned=str(parsed))
 
-    iterations = 0
-    step = "search"
-    while step != "done":
-        iterations += 1
-        trace.check_iterations(iterations)
+    try:
+        iterations = 0
+        step = "search"
+        while step != "done":
+            iterations += 1
+            trace.check_iterations(iterations)
 
-        if step == "search":
-            session["search_results"] = search_listings(
-                parsed["description"], parsed["size"], parsed["max_price"]
-            )
-            # THE BRANCH: nothing found -> explain and stop, never call the model tools.
-            if not session["search_results"]:
-                session["error"] = _no_results_message(parsed)
-                return session
-            session["selected_item"] = session["search_results"][0]
-            step = "outfit"
+            if step == "search":
+                args = {
+                    "description": parsed["description"],
+                    "size": parsed["size"],
+                    "max_price": parsed["max_price"],
+                }
+                session["search_results"] = call_tool("search_listings", args)
+                trace.step("search_listings (via MCP)", inputs=str(args),
+                           returned=session["search_results"])
+                # THE BRANCH: nothing found -> explain and stop, never call the model tools.
+                if not session["search_results"]:
+                    session["error"] = _no_results_message(parsed)
+                    trace.step("branch", note="search returned [] — stopping before suggest_outfit")
+                    return session
+                session["selected_item"] = session["search_results"][0]
+                trace.step("select", returned=session["selected_item"],
+                           note="first result goes into session['selected_item']")
+                step = "outfit"
 
-        elif step == "outfit":
-            session["outfit_suggestion"] = suggest_outfit(
-                session["selected_item"], session["wardrobe"]
-            )
-            step = "card"
+            elif step == "outfit":
+                session["outfit_suggestion"] = suggest_outfit(
+                    session["selected_item"], session["wardrobe"]
+                )
+                trace.step("suggest_outfit",
+                           inputs=f"{session['selected_item']['title']} + wardrobe of "
+                                  f"{len(session['wardrobe'].get('items') or [])} items",
+                           returned=session["outfit_suggestion"])
+                step = "card"
 
-        elif step == "card":
-            session["fit_card"] = create_fit_card(
-                session["outfit_suggestion"], session["selected_item"]
-            )
-            step = "done"
+            elif step == "card":
+                session["fit_card"] = create_fit_card(
+                    session["outfit_suggestion"], session["selected_item"]
+                )
+                trace.step("create_fit_card",
+                           inputs=f"{session['selected_item']['title']} + outfit text",
+                           returned=session["fit_card"])
+                step = "done"
+
+    except ModelUnavailable as exc:
+        session["error"] = (
+            "The outfit helper couldn't reach the AI model, so no outfit or fit card "
+            f"was made. Your search itself worked. Check your API key in .env and your "
+            f"internet connection, then run the same query again. Details: {exc}"
+        )
+        trace.step("model unavailable", note=str(exc)[:100])
+    except MCPError as exc:
+        session["error"] = (
+            "The listing search service didn't respond, so nothing was searched. "
+            "Run `python mcp_server.py` on its own to see the error, then try again. "
+            f"Details: {str(exc).splitlines()[0]}"
+        )
+        trace.step("mcp error", note=str(exc).splitlines()[0])
 
     return session
 
