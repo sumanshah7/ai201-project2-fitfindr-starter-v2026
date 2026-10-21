@@ -468,6 +468,41 @@ The handlers are in `agent.py::run_agent` (`except ModelUnavailable` and `except
 
 Declared after the improvement above and before writing any of it, as the brief asks. The change: when a search comes back empty and the query had a size, `agent.py::run_agent` searches once more without the size, and tells the user which size it dropped. If the retry is also empty, the loop stops exactly as before. I expect criteria 1 to 5 to stay where they are (none of the scenarios fails *because of* its size), so the proof will be one extra diagnostic query (`'vintage jeans size XXL'`) plus a third run log in the same format. I am not retrying with fewer keywords, because that would let "white leather wedding dress" match the leather jacket again and undo the criterion 2 fix.
 
+### Stretch result
+
+Built in `agent.py::run_agent` (the retry) and `app.py` (prints the note). Run log: `python score_eval.py --label stretch` (`results/run_2026-10-21_0924_stretch.md`).
+
+| Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
+|---|---|---|---|---|---|---|---|
+| 1. Matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | FAIL | MET (4/5) |
+| 2. Impossible query stops before suggest_outfit | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Selected item is the item that reached the tools | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card: 2-4 sentences, price, platform, distinct opening | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. Price ceiling and size respected | 10 of 10 | PASS | PASS | PASS | PASS | PASS | MET (10/10) |
+
+Identical to the "after" table, as I predicted. The change does not fix criterion 1 Try 5 ("something cute for a summer picnic" has no size to drop). The proof that it works is the diagnostic run:
+
+```
+$ python app.py ask 'corduroy pants size XL' --trace
+[2] search_listings (via MCP)
+      in:  {'description': 'corduroy pants', 'size': 'XL', 'max_price': None}
+      out: [] (empty)
+[3] branch
+      →    empty with size 'XL' — retrying once without size
+[4] search_listings (via MCP), size dropped
+      in:  {'description': 'corduroy pants', 'size': None, 'max_price': None}
+      out: 2 items: Corduroy Wide-Leg Pants — Rust, Low-Rise Cargo Pants — Khaki
+...
+  Note:     Nothing matched in size XL, so I dropped the size filter. Check each listing's size before you buy.
+  Found:    Corduroy Wide-Leg Pants — Rust — $32.0 on depop (size W28)
+```
+
+And the impossible query still stops: `'designer ballgown size XXS under $5'` retried without the size, got `[]` again, and ended with the same "Nothing matched" message and no model call.
+
+**Two weaknesses I found while testing this:**
+- Criterion 5 still reads 10 of 10, but only because it checks the search tool directly. Through the agent, a user who asks for XL can now be shown a W28, which the note discloses. The criterion is about search output, so it cannot see this. It was a trade I chose on purpose.
+- My first demo query (`'vintage jeans size XXL'`) did not trigger the retry. It returned a leather belt, a bucket hat and a bag. Two things caused that. `One Size` listings match any size by design, so they pass an XXL filter. And "at least half the keywords" is 1 of 2 for a two-word query, so "jeans" is not required when the query is "vintage jeans". My improvement above was weaker than "half" sounds for short queries, and none of my five criteria would catch it.
+
 ---
 
 ## What's Still Broken
@@ -475,6 +510,7 @@ Declared after the improvement above and before writing any of it, as the brief 
 - **Natural-language queries.** "something cute for a summer picnic" now stops with a message, where a person would expect some suggestions. The search is plain keyword matching with no sense of "summer" or "picnic". What I would do: let the model rewrite the user's request into the data's vocabulary (tee, shorts, linen) before searching, or retry once with half the keywords. I stopped because the brief limits this unit to the MCP move and one improvement.
 - **Criterion 4 target is too loose.** It was met at 5/5 against a target allowing one miss, and the card checks (price, platform, sentence count) are all things the prompt hands the model directly. I would tighten it to 5 of 5 and add a check for a detail specific to the item.
 - **The loop is slow over MCP.** Each search starts a fresh server process. Holding the connection open would fix it. I stopped because it makes the failure behaviour harder to reason about.
+- **Short queries only need one keyword, and One Size matches any size.** `'vintage jeans size XXL'` returns a belt, a hat and a bag (see the stretch section). Fix: require every keyword for queries of two words or fewer, and stop One Size listings matching a size filter for categories where sizing matters (tops, bottoms). Not done: it is a third change to the same tool and I would want to measure it as its own run.
 - **Partial-match tail.** Searches that pass the half-keyword rule can still return weak items at the end of the list (a sweatshirt for "graphic tee"). Nothing in my criteria checks the tail, so I left it.
 
 <!-- ═════════════════════════════════════════════════════════════════════

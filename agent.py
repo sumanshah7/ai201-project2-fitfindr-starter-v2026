@@ -46,6 +46,7 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "wardrobe": wardrobe,        # the user's wardrobe
         "outfit_suggestion": None,   # what suggest_outfit returned
         "fit_card": None,            # what create_fit_card returned
+        "notice": None,              # set when the search was loosened (size dropped)
         "error": None,               # set when the run ended early
     }
 
@@ -129,6 +130,19 @@ def run_agent(query: str, wardrobe: dict) -> dict:
                 session["search_results"] = call_tool("search_listings", args)
                 trace.step("search_listings (via MCP)", inputs=str(args),
                            returned=session["search_results"])
+                # Stretch: one retry without the size filter, and say so.
+                if not session["search_results"] and parsed["size"]:
+                    dropped = parsed["size"]
+                    args = {**args, "size": None}
+                    trace.step("branch", note=f"empty with size {dropped!r} — retrying once without size")
+                    session["search_results"] = call_tool("search_listings", args)
+                    trace.step("search_listings (via MCP), size dropped", inputs=str(args),
+                               returned=session["search_results"])
+                    if session["search_results"]:
+                        session["notice"] = (
+                            f"Nothing matched in size {dropped}, so I dropped the size filter. "
+                            f"Check each listing's size before you buy."
+                        )
                 # THE BRANCH: nothing found -> explain and stop, never call the model tools.
                 if not session["search_results"]:
                     session["error"] = _no_results_message(parsed)
