@@ -65,7 +65,7 @@ and says what to change (price, size or keywords) instead of calling the model.
 
 - **What it does:** Filters the 40 listings by price ceiling and size, scores the rest by keyword overlap with the description, and returns the best matches.
 - **Inputs:** `description` (str), `size` (str or None), `max_price` (float or None, inclusive).
-- **Returns:** A list of at most `config.SEARCH_RESULT_LIMIT` (10) listing dicts, best match first. Each dict has `id`, `title`, `description`, `category`, `style_tags` (list), `size`, `condition`, `price` (float), `colors` (list), `brand` (str or None), `platform`. Size is a whole-word match (`M` matches `S/M` and `M/L`, never `XL` or `US 9`; `One Size` matches anything).
+- **Returns:** A list of at most `config.SEARCH_RESULT_LIMIT` (10) listing dicts, best match first. Each dict has `id`, `title`, `description`, `category`, `style_tags` (list), `size`, `condition`, `price` (float), `colors` (list), `brand` (str or None), `platform`. A listing must match at least half of the description's keywords (added in unit 4). Size is a whole-word match (`M` matches `S/M` and `M/L`, never `XL` or `US 9`; `One Size` matches anything).
 - **When it has nothing:** An empty list `[]` (never None, never an exception).
 
 ### `suggest_outfit`
@@ -438,7 +438,7 @@ Trace:
 
 The handlers are in `agent.py::run_agent` (`except ModelUnavailable` and `except MCPError`). Before that handler existed the loop would have let the exception escape as a stack trace.
 
-**On the MCP move:** I moved `search_listings`. In `mcp_server.py` I registered it with a description that names units and types and states the empty case, and in `agent.py::run_agent` I replaced the direct call with `mcp_client.call_tool("search_listings", {...})`. Nothing behaved differently: I compared direct and MCP results for three queries (7 results, 1 result, and an empty result) and the returned lists were equal, including the empty case coming back as `[]` rather than `None`. The only visible difference is that each call starts a separate server process, so a search is noticeably slower.
+**On the MCP move:** I moved `search_listings`. In `mcp_server.py` I registered it with a description that names units and types and states the empty case, and in `agent.py::run_agent` I replaced the direct call with `mcp_client.call_tool("search_listings", {...})`. Nothing behaved differently: I compared direct and MCP results for three queries (7 results, 1 result, and an empty result) and the returned lists were equal, including the empty case coming back as `[]` rather than `None`. The only visible difference is speed: each call starts a separate server process, and one search took about 720 ms over MCP against under 1 ms direct (one measurement).
 
 ---
 
