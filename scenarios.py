@@ -13,40 +13,51 @@ Three scenarios are filled in to show the shape. Add or change whatever your
 own criteria need — these are a starting point, not a fixed set.
 """
 
+def _s(name, query, criterion, wardrobe="example"):
+    return {"name": name, "query": query, "wardrobe": wardrobe, "criterion": criterion}
+
+
+# score_eval.py runs these. For criteria 1-4 each scenario is ONE try, so five
+# scenarios under a criterion = its five tries (five different queries, as
+# criteria.md words them). Criterion 5 is about search output only, so its ten
+# queries are checked through the MCP search tool without calling the model.
 SCENARIOS = [
-    {
-        # A query the data can match. Criterion 1.
-        "name": "matching query completes",
-        "query": "vintage graphic tee under $30",
-        "wardrobe": "example",
-        "criterion": 1,
-    },
-    {
-        # A query nothing can match. Criterion 2 — the branch.
-        "name": "impossible query stops early",
-        "query": "designer ballgown size XXS under $5",
-        "wardrobe": "example",
-        "criterion": 2,
-    },
-    {
-        # A user with nothing saved. One of unit 4's three failure modes.
-        "name": "empty wardrobe",
-        "query": "denim jacket under $50",
-        "wardrobe": "empty",
-        "criterion": None,
-    },
-    # TODO: add what your criteria 3, 4 and 5 need.
-    #
-    # Set "criterion" to the number in criteria.md that the scenario tests.
-    # "criterion": None means a diagnostic run — useful to have, but it isn't
-    # one of your five, and run_eval.py marks it as such in the table.
-    #
-    # For a state criterion, any normal query works — what you're checking is
-    # what ends up in the session, not what the user typed.
-    #
-    # For a fit-card criterion, you probably want the SAME query listed more
-    # than once, or several different items, depending on what your criterion
-    # actually says.
+    # 1. Matching queries (varied phrasing on purpose — criterion 1's reason is
+    #    that some phrasings will miss).
+    _s("c1 graphic tee", "vintage graphic tee under $30", 1),
+    _s("c1 y2k top", "looking for a y2k top size S", 1),
+    _s("c1 flannel", "oversized flannel under $40", 1),
+    _s("c1 sneakers", "chunky sneakers size US 9", 1),
+    _s("c1 vague phrasing", "something cute for a summer picnic", 1),
+    # 2. Impossible queries — must stop before suggest_outfit.
+    _s("c2 ballgown", "designer ballgown size XXS under $5", 2),
+    _s("c2 tuxedo", "neon green tuxedo size XXS under $3", 2),
+    _s("c2 wedding dress", "white leather wedding dress", 2),
+    _s("c2 cheap parka", "winter parka under $2", 2),
+    _s("c2 tiara", "diamond tiara size M", 2),
+    # 3. State — any queries that match.
+    _s("c3 jeans", "vintage jeans size W30", 3),
+    _s("c3 track jacket", "90s track jacket", 3),
+    _s("c3 cardigan", "knit cardigan under $60", 3),
+    _s("c3 band tee", "band tee size L", 3),
+    _s("c3 cargo", "cargo pants under $40", 3),
+    # 4. Fit card — five different items.
+    _s("c4 graphic tee", "graphic tee under $30", 4),
+    _s("c4 corduroy", "corduroy pants", 4),
+    _s("c4 denim jacket", "denim jacket under $50", 4),
+    _s("c4 hoodie", "vintage hoodie", 4),
+    _s("c4 boots", "combat boots", 4),
+    # Diagnostic: an empty wardrobe (not one of the five).
+    _s("empty wardrobe", "denim jacket under $50", None, wardrobe="empty"),
+]
+
+# 5. Price ceiling and size respected — checked on search output alone.
+# (description, size, max_price)
+CRITERION_5_QUERIES = [
+    ("graphic tee", None, 30.0), ("jeans", "W30", None), ("jacket", None, 40.0),
+    ("top", "M", None), ("vintage", "S", 25.0), ("pants", "W28", 35.0),
+    ("shoes", "US 9", None), ("sweatshirt", "L", 30.0), ("tee", None, 15.0),
+    ("dress", "M", 50.0),
 ]
 
 WARDROBES = ("example", "empty")
