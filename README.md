@@ -464,6 +464,12 @@ The handlers are in `agent.py::run_agent` (`except ModelUnavailable` and `except
 
 ---
 
+## Stretch: retry without the size filter (declared before building)
+
+Declared after the improvement above and before writing any of it, as the brief asks. The change: when a search comes back empty and the query had a size, `agent.py::run_agent` searches once more without the size, and tells the user which size it dropped. If the retry is also empty, the loop stops exactly as before. I expect criteria 1 to 5 to stay where they are (none of the scenarios fails *because of* its size), so the proof will be one extra diagnostic query (`'vintage jeans size XXL'`) plus a third run log in the same format. I am not retrying with fewer keywords, because that would let "white leather wedding dress" match the leather jacket again and undo the criterion 2 fix.
+
+---
+
 ## What's Still Broken
 
 - **Natural-language queries.** "something cute for a summer picnic" now stops with a message, where a person would expect some suggestions. The search is plain keyword matching with no sense of "summer" or "picnic". What I would do: let the model rewrite the user's request into the data's vocabulary (tee, shorts, linen) before searching, or retry once with half the keywords. I stopped because the brief limits this unit to the MCP move and one improvement.
